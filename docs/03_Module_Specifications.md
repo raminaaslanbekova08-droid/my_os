@@ -1,12 +1,12 @@
  Спецификации модулей StudyOS
 
 Документ описывает каждый модуль ОС по единой структуре:
+
 1. Назначение
 2. Публичный интерфейс
 3. Внутренние зависимости
 4. Обработка ошибок
 5. Побочные эффекты
-
 
 
  6. Модуль `db.py`
@@ -39,6 +39,8 @@
 
 - Создание файла `db/os.sqlite` при первом запуске.
 - Создание таблиц `users`, `processes`, `files`, `syscalls_log`, `memory_state`, `roles`.
+- Заполнение таблицы `roles` тремя ролями: `admin`, `user`, `guest`.
+
 
 
  2. Модуль `syscalls.py`
@@ -51,7 +53,6 @@
  Публичный интерфейс
 
 - `log_syscall(name, args, user, status) -> None`
-- `check_permission(current_user, action, target_owner) -> bool`
 - `sys_login(login, password, current_user) -> bool`
 - `sys_logout(current_user) -> bool`
 - `sys_whoami(current_user) -> str`
@@ -69,8 +70,10 @@
  Внутренние зависимости
 
 - `db.py` — для записи в `syscalls_log`.
-- `auth.py` — для проверки прав (на следующих занятиях).
-- `kernel.py` — для реальной логики (на следующих занятиях).
+- `auth.py` — для `authenticate` и `check_permission`.
+- `kernel.py` — для `kernel_instance`.
+- `fs.py` — для файловых операций (день 5).
+- `scheduler.py` — для процессов (день 5).
 
  Обработка ошибок
 
@@ -79,33 +82,40 @@
 - PID не существует → `sys_kill` возвращает `False`.
 - Нет прав на удаление файла → `sys_delete_file` возвращает `False` и статус `DENIED`.
 - Нет прав на завершение процесса → `sys_kill` возвращает `False` и статус `DENIED`.
+- Неверный пароль → `sys_login` возвращает `False` и статус `DENIED`.
 
  Побочные эффекты
 
 Каждый вызов пишет строку в `syscalls_log` с полями:
 `syscall_name`, `args`, `user`, `status`, `timestamp`.
 
+При успешном `sys_login` вызывается `kernel_instance.set_user(login)`.
 
 
- 3. Модуль `kernel.py`
+ 1. Модуль `kernel.py`
 
  Назначение
 
 Хранит состояние системы: текущего пользователя, счётчик PID,
-объём используемой памяти и её лимит. Делегирует работу подсистемам.
+объём используемой памяти и её лимит, список сессий. Делегирует работу
+подсистемам.
 
  Публичный интерфейс
 
 - `Kernel()` — конструктор.
-- `set_user(login) -> None`
-- `get_user() -> str`
-- `allocate_pid() -> int`
-- `allocate_memory(size) -> bool`
-- `free_memory(size) -> None`
-- `memory_info() -> dict`
-- `save_memory_state() -> None`
-- `load_memory_state() -> None`
-- `kernel_instance` — глобальный экземпляр.
+- `set_user(login) -> None` — установить текущего пользователя.
+- `get_user() -> str` — получить текущего пользователя.
+- `allocate_pid() -> int` — выдать следующий PID.
+- `allocate_memory(size) -> bool` — выделить память.
+- `free_memory(size) -> None` — освободить память.
+- `memory_info() -> dict` — состояние памяти (`used`, `limit`, `free`).
+- `save_memory_state() -> None` — сохранить состояние памяти в БД.
+- `load_memory_state() -> None` — загрузить состояние памяти из БД.
+- `create_session(login) -> int` — создать сессию, вернуть sid.
+- `switch_session(sid) -> bool` — переключить сессию.
+- `list_sessions() -> list` — список сессий.
+- `reset() -> None` — сбросить пользователя и память.
+- `kernel_instance` — глобальный экземпляр ядра.
 
  Внутренние зависимости
 
@@ -114,14 +124,16 @@
  Обработка ошибок
 
 - Превышение лимита памяти → `allocate_memory` возвращает `False`.
+- Освобождение большего объёма, чем использовано → `memory_used` не уходит ниже 0.
 
  Побочные эффекты
 
 - Обновление таблицы `memory_state` при выделении/освобождении памяти.
+- Изменение `current_user` при `set_user` и `reset`.
 
 
 
- 4. Модуль `scheduler.py`
+ 1. Модуль `scheduler.py`
 
  Назначение
 
@@ -145,19 +157,22 @@
 
 - Не хватает памяти → `create_process` возвращает `-1`.
 - Процесс не найден → `terminate_process` возвращает `False`.
+- Пустой список процессов → `schedule_round_robin` возвращает `None`.
 
  Побочные эффекты
 
 - Запись/удаление строк в таблице `processes`.
 - Изменение состояния процессов (`ready`/`running`).
+-  Выделение/освобождение памяти через ядро.
 
+--
 
-
- 5. Модуль `memory.py`
+ 1. Модуль `memory.py`
 
  Назначение
 
-Обёртка над методами ядра для работы с памятью.
+Обёртка над методами ядра для работы с памятью. Используется как
+отдельная подсистема для тестов и расширений.
 
  Публичный интерфейс
 
@@ -179,15 +194,17 @@
 
 
 
- 6. Модуль `fs.py`
+ 1. Модуль `fs.py`
 
  Назначение
 
-Файловая система. Создание, чтение, запись, удаление, список файлов.
-Работает с таблицей `files` базы данных.
+Файловая система. Создание, чтение, запись, удаление, список файлов,
+работа с каталогами и деревом. Работает с таблицей `files`.
 
  Публичный интерфейс
 
+- `exists(path) -> bool`
+- `is_directory(path) -> bool`
 - `create_file(path, content, owner) -> int`
 - `read_file(path) -> str`
 - `write_file(path, content) -> bool`
@@ -210,7 +227,8 @@
 
 - Файл уже существует → `create_file` возвращает `-1`.
 - Файл не найден → `read_file` возвращает пустую строку.
-- Нет прав → `delete_file` возвращает `False`.
+- Нет родителя → `create_file` возвращает `-1`.
+- Файл не найден при удалении → `delete_file` возвращает `False`.
 
  Побочные эффекты
 
@@ -219,7 +237,7 @@
 
 
 
- 7. Модуль `auth.py`
+ 1. Модуль `auth.py`
 
  Назначение
 
@@ -227,7 +245,7 @@
 
  Публичный интерфейс
 
-- `hash_password(password) -> str` — SHA-256.
+- `hash_password(password) -> str` — SHA-256, длина 64 символа.
 - `register_user(login, password, role) -> int | None`
 - `authenticate(login, password) -> dict | None`
 - `check_permission(current_user, action, target_owner) -> bool`
@@ -241,8 +259,9 @@
  Обработка ошибок
 
 - Логин занят → `register_user` возвращает `None`.
-- Неверный пароль → `authenticate` возвращает `None`.
 - Пароль короче 4 символов → `register_user` возвращает `None`.
+- Неверный пароль → `authenticate` возвращает `None`.
+- Старый пароль не совпал → `change_password` возвращает `False`.
 
  Побочные эффекты
 
@@ -251,7 +270,9 @@
 
 
 
- 1. Модуль `shell.py`
+
+1. Модуль `shell.py`
+
  Назначение
 
 Командная оболочка: читает команды пользователя, вызывает системные
@@ -262,8 +283,7 @@
 - `main() -> None`
 
 Команды: `help`, `echo`, `whoami`, `login`, `logout`, `create`, `cat`,
-`ls`, `mkdir`, `rmdir`, `cd`, `pwd`, `tree`, `copy`, `move`, `run`, `ps`,
-`kill`, `mem`, `logs`, `exit`.
+`ls`, `delete`, `run`, `ps`, `kill`, `mem`, `logs`, `exit`.
 
  Внутренние зависимости
 
@@ -274,6 +294,7 @@
 
 - Пустой ввод — игнорируется.
 - Неизвестная команда — выводится сообщение.
+- Ctrl+C и EOF — корректный выход.
 
  Побочные эффекты
 
@@ -281,24 +302,24 @@
 - Через системные вызовы — изменение состояния системы.
 
 
-
  Матрица трассируемости требований
 
-| Требование                                    | Модуль                   | Тест              |
-|-----------------------------------------------|--------------------------|-------------------|
-| NFR-1: Время обработки syscall ≤ 50 мс        | `syscalls.py`            | `TC-01`           |
-| NFR-2: ОС выдерживает 10 одновременных процессов | `scheduler.py`        | `TC-02`           |
-| NFR-3: Ошибка в процессе не роняет ядро       | `kernel.py`              | `TC-03`           |
-| NFR-4: Пароли хранятся как SHA-256            | `auth.py`                | `TC-04`           |
-| NFR-5: User не может удалить файл Admin       | `syscalls.py`, `auth.py` | `TC-02`           |
-| NFR-6: Модуль ≤ 300 строк                     | все модули               | `TC-03`           |
-| NFR-7: Все системные вызовы логируются        | `syscalls.py`, `db.py`   | `TC-05`           |
-| NFR-8: ОС работает без внешних СУБД           | все модули               | `TC-08`           |
+| Требование                                       | Модуль                   | Тест              |
+|--------------------------------------------------|--------------------------|-------------------|
+| NFR-1: Время обработки syscall ≤ 50 мс           | `syscalls.py`            | `TC-01`           |
+| NFR-2: ОС выдерживает 10 одновременных процессов | `scheduler.py`           | `TC-02`           |
+| NFR-3: Ошибка в процессе не роняет ядро          | `kernel.py`              | `TC-03`           |
+| NFR-4: Пароли хранятся как SHA-256               | `auth.py`                | `TC-04`           |
+| NFR-5: User не может удалить файл Admin          | `syscalls.py`, `auth.py` | `TC-02` (perm)    |
+| NFR-6: Модуль ≤ 300 строк                        | все модули               | `TC-03`           |
+| NFR-7: Все системные вызовы логируются           | `syscalls.py`, `db.py`   | `TC-05`           |
+| NFR-8: ОС работает без внешних СУБД              | все модули               | `TC-08`           |
 
  Пояснения по требованиям
 
 **NFR-4: Пароли хранятся как SHA-256.** Модуль `auth.py` при регистрации
-вычисляет хэш через `hashlib.sha256` и сохраняет в поле `password_hash`.
+вычисляет хэш через `hashlib.sha256` и сохраняет в поле `password_hash`
+таблицы `users`. При входе хэш сравнивается.
 
 **NFR-5: User не может удалить файл Admin.** `syscalls.sys_delete_file`
 перед удалением вызывает `check_permission`. Если владелец файла не
@@ -306,7 +327,9 @@
 и в лог пишется `DENIED`.
 
 **NFR-7: Все системные вызовы логируются.** Каждая функция в
-`syscalls.py` вызывает `log_syscall(...)` минимум дважды.
+`syscalls.py` вызывает `log_syscall(...)` минимум дважды: со статусом
+`check` и итоговым статусом (`OK`, `DENIED`, `EXISTS`, `NOT_FOUND`).
+
 
 
  Тест-кейсы
@@ -314,6 +337,7 @@
  TC-01: Проверка времени обработки syscall (NFR-1)
 
 **Шаги:**
+
 1. Запустить интерпретатор Python.
 2. Импортировать `sys_create_file` из `src.syscalls`.
 3. Замерить время через `time.perf_counter()` до и после вызова.
@@ -327,6 +351,7 @@
  TC-02: Проверка разграничения прав (NFR-5)
 
 **Шаги:**
+
 1. Авторизоваться как guest.
 2. Создать файл от имени admin.
 3. От имени guest вызвать `sys_delete_file` для этого файла.
@@ -339,8 +364,9 @@
  TC-03: Проверка размера модулей (NFR-6)
 
 **Шаги:**
+
 1. Открыть терминал в корне проекта.
-2. Выполнить: `wc -l src/*.py`.
+2. Выполнить: `wc -l src/*.py` (или команду PowerShell).
 3. Проверить, что ни один файл не превышает 300 строк.
 
 **Ожидаемый результат:** все файлы ≤ 300 строк.
@@ -350,17 +376,19 @@
  TC-04: Проверка хэширования пароля (NFR-4)
 
 **Шаги:**
+
 1. Создать файл `tests/test_auth.py`.
 2. Запустить: `python -m tests.test_auth`.
 3. Убедиться, что длина хэша равна 64.
 
-**Ожидаемый результат:** `len(hash) == 64`.
-**Фактический результат:** ---
-**Статус:** ---
+**Ожидаемый результат:** `len(hash) == 64`, хэш ≠ исходный пароль.
+**Фактический результат:** пройдено.
+**Статус:** PASS
 
  TC-05: Проверка логирования отказов (NFR-7)
 
 **Шаги:**
+
 1. Выполнить `sys_delete_file("/x.txt", "guest", owner="admin")`.
 2. Открыть `db/os.sqlite` через SQLite Viewer.
 3. В таблице `syscalls_log` найти запись `sys_delete_file` со статусом `DENIED`.
@@ -368,7 +396,6 @@
 **Ожидаемый результат:** запись со статусом `DENIED` присутствует.
 **Фактический результат:** ---
 **Статус:** ---
-
 
 
  Итоги дня 3
@@ -382,3 +409,49 @@
 - Внедрена проверка прав в `sys_delete_file` и `sys_kill`.
 - Написаны автоматические тесты в `tests/test_permissions.py`.
 - Построена диаграмма последовательности `03_sequence_permissions.png`.
+
+---
+
+ Итоги дня 4
+
+ Что сделано
+
+- Расширен `db.py`: добавлены `execute_insert`, `execute_select`,
+  `execute_update`, `execute_delete`, таблица `memory_state`.
+- Создан `kernel.py` с классом `Kernel` и шестью методами.
+- Создан `auth.py` с функциями `hash_password`, `register_user`,
+  `authenticate`, `check_permission`, `change_password`.
+- Обновлён `syscalls.py`: `sys_login`, `sys_whoami`, `sys_delete_file`,
+  `sys_kill` используют реальные модули.
+- Обновлён `shell.py`: команды `login`, `mem`, `delete`, `logs` работают.
+- Написаны тесты `tests/test_kernel.py` и `tests/test_auth.py`.
+
+ Обновлённые спецификации
+
+ `db.py` — добавлено
+
+- `execute_insert(table, data) -> int`
+- `execute_select(table, conditions=None) -> list`
+- `execute_update(table, data, conditions) -> None`
+- `execute_delete(table, conditions) -> None`
+
+`kernel.py` — полный публичный интерфейс
+
+- `Kernel()` — конструктор.
+- `set_user(login) -> None`
+- `get_user() -> str`
+- `allocate_pid() -> int`
+- `allocate_memory(size) -> bool`
+- `free_memory(size) -> None`
+- `memory_info() -> dict`
+- `save_memory_state() -> None`
+- `load_memory_state() -> None`
+- `kernel_instance` — глобальный экземпляр.
+
+ `auth.py` — полный публичный интерфейс
+
+- `hash_password(password) -> str`
+- `register_user(login, password, role) -> int | None`
+- `authenticate(login, password) -> dict | None`
+- `check_permission(current_user, action, target_owner) -> bool`
+- `change_password(login, old, new) -> bool`

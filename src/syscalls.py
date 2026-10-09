@@ -1,12 +1,9 @@
-"""Модуль системных вызовов.
-
-Предоставляет единый интерфейс для оболочки.
-Каждая функция:
-  - логирует вызов в таблицу syscalls_log;
-  - возвращает правдоподобный результат (заглушка).
-"""
+"""Модуль системных вызовов."""
 
 from src.db import get_connection
+from src.auth import authenticate, check_permission
+from src.kernel import kernel_instance
+
 
 
 def log_syscall(name, args="", user="system", status="OK"):
@@ -22,47 +19,33 @@ def log_syscall(name, args="", user="system", status="OK"):
     conn.close()
 
 
-
-
-def check_permission(current_user, action, target_owner=None):
-    """Проверяет, имеет ли пользователь право на действие.
-
-    admin может всё.
-    Обычный пользователь не может удалять чужие файлы и завершать процессы.
-    """
-    if current_user == "admin":
-        return True
-
-    if action == "delete_file" and target_owner and target_owner != current_user:
-        return False
-
-    if action == "kill" and current_user != "admin":
-        return False
-
-    return True
-
-
-
 def sys_login(login, password, current_user="guest"):
     log_syscall("sys_login", login, current_user, "check")
-    log_syscall("sys_login", login, current_user, "OK")
-    return True
+    user = authenticate(login, password)
+    if user:
+        kernel_instance.set_user(login)
+        log_syscall("sys_login", login, current_user, "OK")
+        return True
+    log_syscall("sys_login", login, current_user, "DENIED")
+    return False
 
 
 def sys_logout(current_user="guest"):
     log_syscall("sys_logout", "", current_user, "OK")
+    kernel_instance.set_user("guest")
     return True
 
 
 def sys_whoami(current_user="guest"):
     log_syscall("sys_whoami", "", current_user, "OK")
-    return current_user
+    return kernel_instance.get_user()
+
 
 
 def sys_create_file(path, content, current_user="guest"):
     log_syscall("sys_create_file", path, current_user, "check")
     log_syscall("sys_create_file", path, current_user, "OK")
-    return 1  # фиктивный id
+    return 1
 
 
 def sys_read_file(path, current_user="guest"):
@@ -89,7 +72,7 @@ def sys_list_files(path="/", current_user="guest"):
 def sys_exec(name, current_user="guest", memory_size=10):
     log_syscall("sys_exec", name, current_user, "check")
     log_syscall("sys_exec", name, current_user, "OK")
-    return 42  # фиктивный PID
+    return 42
 
 
 def sys_ps(current_user="guest"):
@@ -108,13 +91,22 @@ def sys_kill(pid, current_user="guest"):
 
 def sys_mem_alloc(size, current_user="guest"):
     log_syscall("sys_mem_alloc", str(size), current_user, "check")
-    log_syscall("sys_mem_alloc", str(size), current_user, "OK")
-    return 0
+    ok = kernel_instance.allocate_memory(size)
+    log_syscall("sys_mem_alloc", str(size), current_user,
+                "OK" if ok else "DENIED")
+    return 0 if ok else -1
 
 
 def sys_logs(limit=10, current_user="guest"):
     log_syscall("sys_logs", str(limit), current_user, "OK")
-    return []
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM syscalls_log ORDER BY id DESC LIMIT ?", (limit,)
+    )
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
 
 
 def sys_shutdown(current_user="guest"):
@@ -123,16 +115,10 @@ def sys_shutdown(current_user="guest"):
 
 
 if __name__ == "__main__":
-    print("sys_login:", sys_login("admin", "secret"))
+    print("sys_login (admin/secret):", sys_login("admin", "secret"))
     print("sys_whoami:", sys_whoami("admin"))
-    print("sys_create_file:", sys_create_file("/test.txt", "hello", "admin"))
-    print("sys_ps:", sys_ps("admin"))
-    print("sys_read_file:", repr(sys_read_file("/test.txt", "admin")))
-    print("sys_list_files:", sys_list_files("/", "admin"))
-    print("sys_exec:", sys_exec("app", "admin"))
-    print("sys_kill (admin):", sys_kill(42, "admin"))
-    print("sys_kill (guest):", sys_kill(42, "guest"))
+    print("sys_login (wrong):", sys_login("admin", "wrong"))
     print("sys_delete_file (guest -> admin):",
           sys_delete_file("/admin.txt", "guest", owner="admin"))
-    print("sys_shutdown:", sys_shutdown("admin"))
+    print("sys_kill (guest):", sys_kill(1, "guest"))
     print("Готово.")
