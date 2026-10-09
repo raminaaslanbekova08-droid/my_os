@@ -9,7 +9,6 @@
 from src.db import get_connection
 
 
-
 def log_syscall(name, args="", user="system", status="OK"):
     """Записывает информацию о системном вызове в таблицу syscalls_log."""
     conn = get_connection()
@@ -21,6 +20,7 @@ def log_syscall(name, args="", user="system", status="OK"):
     )
     conn.commit()
     conn.close()
+
 
 
 
@@ -42,102 +42,84 @@ def check_permission(current_user, action, target_owner=None):
     return True
 
 
+
 def sys_login(login, password, current_user="guest"):
-    """Заглушка входа в систему. Возвращает True при успехе."""
     log_syscall("sys_login", login, current_user, "check")
     log_syscall("sys_login", login, current_user, "OK")
     return True
 
 
 def sys_logout(current_user="guest"):
-    """Заглушка выхода из системы."""
     log_syscall("sys_logout", "", current_user, "OK")
     return True
 
 
 def sys_whoami(current_user="guest"):
-    """Возвращает имя текущего пользователя."""
     log_syscall("sys_whoami", "", current_user, "OK")
     return current_user
 
 
 def sys_create_file(path, content, current_user="guest"):
-    """Заглушка создания файла. Возвращает id (пока всегда 1)."""
     log_syscall("sys_create_file", path, current_user, "check")
     log_syscall("sys_create_file", path, current_user, "OK")
-    return 1
+    return 1  # фиктивный id
 
 
 def sys_read_file(path, current_user="guest"):
-    """Заглушка чтения файла. Возвращает пустую строку."""
     log_syscall("sys_read_file", path, current_user, "check")
     log_syscall("sys_read_file", path, current_user, "OK")
     return ""
 
 
 def sys_delete_file(path, current_user="guest", owner=None):
-    """Заглушка удаления файла с проверкой прав."""
     log_syscall("sys_delete_file", path, current_user, "check")
-
     if not check_permission(current_user, "delete_file", owner):
         log_syscall("sys_delete_file", path, current_user, "DENIED")
         return False
-
     log_syscall("sys_delete_file", path, current_user, "OK")
     return True
 
 
 def sys_list_files(path="/", current_user="guest"):
-    """Заглушка списка файлов. Возвращает пустой список."""
     log_syscall("sys_list_files", path, current_user, "OK")
     return []
 
 
 
 def sys_exec(name, current_user="guest", memory_size=10):
-    """Заглушка запуска процесса. Возвращает фиктивный PID = 42."""
     log_syscall("sys_exec", name, current_user, "check")
     log_syscall("sys_exec", name, current_user, "OK")
-    return 42
+    return 42  # фиктивный PID
 
 
 def sys_ps(current_user="guest"):
-    """Заглушка списка процессов. Возвращает пустой список."""
     log_syscall("sys_ps", "", current_user, "OK")
     return []
 
 
 def sys_kill(pid, current_user="guest"):
-    """Заглушка завершения процесса с проверкой прав."""
     log_syscall("sys_kill", str(pid), current_user, "check")
-
     if not check_permission(current_user, "kill"):
         log_syscall("sys_kill", str(pid), current_user, "DENIED")
         return False
-
     log_syscall("sys_kill", str(pid), current_user, "OK")
     return True
 
 
-
 def sys_mem_alloc(size, current_user="guest"):
-    """Заглушка выделения памяти. Возвращает 0 (успех)."""
     log_syscall("sys_mem_alloc", str(size), current_user, "check")
     log_syscall("sys_mem_alloc", str(size), current_user, "OK")
     return 0
 
 
 def sys_logs(limit=10, current_user="guest"):
-    """Заглушка чтения журнала. Возвращает пустой список."""
     log_syscall("sys_logs", str(limit), current_user, "OK")
     return []
 
 
 def sys_shutdown(current_user="guest"):
-    """Заглушка завершения работы ОС."""
     log_syscall("sys_shutdown", "", current_user, "OK")
     return True
-
 
 
 if __name__ == "__main__":
@@ -148,10 +130,9 @@ if __name__ == "__main__":
     print("sys_read_file:", repr(sys_read_file("/test.txt", "admin")))
     print("sys_list_files:", sys_list_files("/", "admin"))
     print("sys_exec:", sys_exec("app", "admin"))
-    print("sys_kill:", sys_kill(42, "admin"))
+    print("sys_kill (admin):", sys_kill(42, "admin"))
     print("sys_kill (guest):", sys_kill(42, "guest"))
     print("sys_delete_file (guest -> admin):",
           sys_delete_file("/admin.txt", "guest", owner="admin"))
-    print("sys_logs:", sys_logs(5, "admin"))
     print("sys_shutdown:", sys_shutdown("admin"))
     print("Готово.")
