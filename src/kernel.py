@@ -11,6 +11,19 @@ class Kernel:
         self.process_counter = 0
         self.memory_used = 0
         self.memory_limit = MEMORY_LIMIT
+        self.sync_pid_counter()
+    
+    def sync_pid_counter(self):
+        """Синхронизирует счётчик PID с базой данных."""
+        try:
+            procs = db.execute_select('processes')
+            if procs:
+                max_pid = max(p['pid'] for p in procs)
+                self.process_counter = max_pid
+            else:
+                self.process_counter = 0
+        except Exception:
+            self.process_counter = 0
     
     def set_user(self, login):
         """Устанавливает текущего пользователя."""
@@ -49,7 +62,7 @@ class Kernel:
     
     def save_memory_state(self):
         """Сохраняет состояние памяти в БД."""
-        db.execute_delete('memory_state', {})
+        db.execute_delete('memory_state')
         db.execute_insert('memory_state', {
             'used': self.memory_used,
             'mem_limit': self.memory_limit

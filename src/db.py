@@ -14,7 +14,6 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -27,7 +26,7 @@ def init_db():
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS processes (
-            pid INTEGER PRIMARY KEY AUTOINCREMENT,
+            pid INTEGER PRIMARY KEY,
             name TEXT NOT NULL,
             state TEXT DEFAULT 'ready',
             owner TEXT,
