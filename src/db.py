@@ -14,7 +14,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,7 +24,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    
     
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS processes (
@@ -37,7 +36,6 @@ def init_db():
         )
     """)
     
-    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +46,6 @@ def init_db():
         )
     """)
     
-    
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS syscalls_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,6 +54,14 @@ def init_db():
             user TEXT,
             status TEXT,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memory_state (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            used INTEGER DEFAULT 0,
+            mem_limit INTEGER DEFAULT 1024
         )
     """)
     
@@ -73,6 +78,68 @@ def execute_query(sql, params=()):
     result = cursor.fetchall()
     conn.close()
     return result
+
+
+def execute_insert(table, data):
+    """Вставляет запись в таблицу."""
+    keys = ", ".join(data.keys())
+    placeholders = ", ".join(["?"] * len(data))
+    sql = f"INSERT INTO {table} ({keys}) VALUES ({placeholders})"
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(sql, tuple(data.values()))
+    conn.commit()
+    last_id = cursor.lastrowid
+    conn.close()
+    return last_id
+
+
+def execute_select(table, conditions=None):
+    """Возвращает записи из таблицы. Если conditions пустой — возвращает все записи."""
+    sql = f"SELECT * FROM {table}"
+    params = ()
+    if conditions:
+        where = " AND ".join([f"{k} = ?" for k in conditions.keys()])
+        sql += f" WHERE {where}"
+        params = tuple(conditions.values())
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(sql, params)
+    result = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return result
+
+
+def execute_update(table, data, conditions=None):
+    """Обновляет записи. Если conditions пустой — обновляет все записи."""
+    set_clause = ", ".join([f"{k} = ?" for k in data.keys()])
+    sql = f"UPDATE {table} SET {set_clause}"
+    params = list(data.values())
+    if conditions:
+        where_clause = " AND ".join([f"{k} = ?" for k in conditions.keys()])
+        sql += f" WHERE {where_clause}"
+        params += list(conditions.values())
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(sql, tuple(params))
+    conn.commit()
+    conn.close()
+
+
+def execute_delete(table, conditions=None):
+    """Удаляет записи. Если conditions пустой — очищает всю таблицу."""
+    sql = f"DELETE FROM {table}"
+    params = ()
+    if conditions:
+        where_clause = " AND ".join([f"{k} = ?" for k in conditions.keys()])
+        sql += f" WHERE {where_clause}"
+        params = tuple(conditions.values())
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(sql, params)
+    conn.commit()
+    conn.close()
 
 
 if __name__ == "__main__":
