@@ -1,0 +1,25 @@
+ Кэш Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+ Базы данных
+*.sqlite
+*.sqlite3
+
+ Виртуальные окружения
+.venv/
+venv/
+env/
+
+ Настройки VS Code
+.vscode/
+
+ Логи
+logs/*.log
+
+ Служебные файлы ОС
+Thumbs.db
+Desktop.ini
+.DS_Store
