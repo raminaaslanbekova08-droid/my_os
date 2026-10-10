@@ -2,8 +2,8 @@
 
 from src.syscalls import (
     sys_login, sys_logout, sys_whoami,
-    sys_create_file, sys_list_files, sys_ps,
-    sys_delete_file, sys_kill, sys_logs,
+    sys_create_file, sys_read_file, sys_delete_file, sys_list_files,
+    sys_exec, sys_ps, sys_kill, sys_logs,
 )
 from src.kernel import kernel_instance
 
@@ -23,8 +23,10 @@ HELP = """
   login             — войти
   logout            — выйти
   create            — создать файл
+  cat <путь>        — прочитать файл
   ls [путь]         — список файлов
   delete <путь>     — удалить файл
+  run <имя>         — запустить процесс
   ps                — список процессов
   kill <pid>        — завершить процесс
   mem               — состояние памяти
@@ -83,7 +85,17 @@ def main():
             path = input("Путь: ")
             content = input("Содержимое: ")
             fid = sys_create_file(path, content, current_user)
-            print(f"Создан файл с id={fid}")
+            if fid == -1:
+                print("Файл с таким путём уже существует")
+            else:
+                print(f"Создан файл с id={fid}")
+
+        elif cmd == "cat":
+            if not arg:
+                print("Укажите путь к файлу")
+            else:
+                content = sys_read_file(arg, current_user)
+                print(content if content else "(файл пуст или не существует)")
 
         elif cmd == "ls":
             files = sys_list_files(arg or "/", current_user)
@@ -97,10 +109,20 @@ def main():
             if not arg:
                 print("Укажите путь к файлу")
             else:
-                if sys_delete_file(arg, current_user, owner="admin"):
+                if sys_delete_file(arg, current_user):
                     print("Файл удалён")
                 else:
-                    print("Нет прав на удаление")
+                    print("Нет прав на удаление или файл не найден")
+
+        elif cmd == "run":
+            if not arg:
+                print("Укажите имя программы")
+            else:
+                pid = sys_exec(arg, current_user)
+                if pid == -1:
+                    print("Не удалось запустить: нет свободной памяти")
+                else:
+                    print(f"Запущен процесс с PID={pid}")
 
         elif cmd == "ps":
             procs = sys_ps(current_user)
@@ -108,7 +130,9 @@ def main():
                 print("(нет процессов)")
             else:
                 for p in procs:
-                    print(p)
+                    print(f"  PID={p['pid']} | {p['name']} | "
+                          f"state={p['state']} | owner={p['owner']} | "
+                          f"mem={p['memory_used']} МБ")
 
         elif cmd == "kill":
             if not arg:

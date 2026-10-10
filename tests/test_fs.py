@@ -4,6 +4,7 @@ from src import fs, db
 
 
 def setup():
+    """Удаляем все тестовые файлы с префиксом /t."""
     for f in db.execute_select("files"):
         if f["path"].startswith("/t"):
             db.execute_delete("files", {"id": f["id"]})

@@ -6,15 +6,18 @@ from src import db
 
 
 def exists(path):
+    """Проверяет, существует ли файл/каталог по пути."""
     return len(db.execute_select("files", {"path": path})) > 0
 
 
 def is_directory(path):
+    """True, если это каталог."""
     files = db.execute_select("files", {"path": path})
     return bool(files) and files[0]["is_directory"] == 1
 
 
 def _resolve_parent_id(parent_path):
+    """Возвращает id родителя или -1, если родителя нет."""
     if not parent_path or parent_path == "/":
         return None
     parents = db.execute_select("files", {"path": parent_path})

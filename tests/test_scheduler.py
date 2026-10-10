@@ -5,6 +5,7 @@ from src.kernel import kernel_instance
 
 
 def setup():
+    """Очищаем процессы и сбрасываем память."""
     for p in db.execute_select("processes"):
         db.execute_delete("processes", {"pid": p["pid"]})
     kernel_instance.reset()

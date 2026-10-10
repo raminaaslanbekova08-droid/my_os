@@ -3,6 +3,7 @@
 from src.db import get_connection
 from src.auth import authenticate, check_permission
 from src.kernel import kernel_instance
+from src import fs, scheduler
 
 
 
@@ -44,40 +45,54 @@ def sys_whoami(current_user="guest"):
 
 def sys_create_file(path, content, current_user="guest"):
     log_syscall("sys_create_file", path, current_user, "check")
+    file_id = fs.create_file(path, content, current_user)
+    if file_id == -1:
+        log_syscall("sys_create_file", path, current_user, "EXISTS")
+        return -1
     log_syscall("sys_create_file", path, current_user, "OK")
-    return 1
+    return file_id
 
 
 def sys_read_file(path, current_user="guest"):
     log_syscall("sys_read_file", path, current_user, "check")
+    content = fs.read_file(path)
     log_syscall("sys_read_file", path, current_user, "OK")
-    return ""
+    return content
 
 
-def sys_delete_file(path, current_user="guest", owner=None):
+def sys_delete_file(path, current_user="guest"):
     log_syscall("sys_delete_file", path, current_user, "check")
+    owner = fs.get_owner(path)
+    if owner is None:
+        log_syscall("sys_delete_file", path, current_user, "NOT_FOUND")
+        return False
     if not check_permission(current_user, "delete_file", owner):
         log_syscall("sys_delete_file", path, current_user, "DENIED")
         return False
+    fs.delete_file(path)
     log_syscall("sys_delete_file", path, current_user, "OK")
     return True
 
 
 def sys_list_files(path="/", current_user="guest"):
     log_syscall("sys_list_files", path, current_user, "OK")
-    return []
+    return fs.list_files(path)
 
 
 
 def sys_exec(name, current_user="guest", memory_size=10):
     log_syscall("sys_exec", name, current_user, "check")
+    pid = scheduler.create_process(name, current_user, memory_size)
+    if pid == -1:
+        log_syscall("sys_exec", name, current_user, "DENIED")
+        return -1
     log_syscall("sys_exec", name, current_user, "OK")
-    return 42
+    return pid
 
 
 def sys_ps(current_user="guest"):
     log_syscall("sys_ps", "", current_user, "OK")
-    return []
+    return scheduler.list_processes()
 
 
 def sys_kill(pid, current_user="guest"):
@@ -85,8 +100,10 @@ def sys_kill(pid, current_user="guest"):
     if not check_permission(current_user, "kill"):
         log_syscall("sys_kill", str(pid), current_user, "DENIED")
         return False
-    log_syscall("sys_kill", str(pid), current_user, "OK")
-    return True
+    result = scheduler.terminate_process(pid)
+    log_syscall("sys_kill", str(pid), current_user,
+                "OK" if result else "NOT_FOUND")
+    return result
 
 
 def sys_mem_alloc(size, current_user="guest"):
@@ -112,13 +129,3 @@ def sys_logs(limit=10, current_user="guest"):
 def sys_shutdown(current_user="guest"):
     log_syscall("sys_shutdown", "", current_user, "OK")
     return True
-
-
-if __name__ == "__main__":
-    print("sys_login (admin/secret):", sys_login("admin", "secret"))
-    print("sys_whoami:", sys_whoami("admin"))
-    print("sys_login (wrong):", sys_login("admin", "wrong"))
-    print("sys_delete_file (guest -> admin):",
-          sys_delete_file("/admin.txt", "guest", owner="admin"))
-    print("sys_kill (guest):", sys_kill(1, "guest"))
-    print("Готово.")

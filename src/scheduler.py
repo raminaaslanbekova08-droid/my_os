@@ -20,15 +20,18 @@ def create_process(name, owner, memory_size=10):
 
 
 def list_processes():
+    """Возвращает список всех процессов."""
     return db.execute_select("processes")
 
 
 def get_process(pid):
+    """Возвращает процесс по pid или None."""
     procs = db.execute_select("processes", {"pid": pid})
     return procs[0] if procs else None
 
 
 def terminate_process(pid):
+    """Завершает процесс. Освобождает память. Возвращает True или False."""
     process = get_process(pid)
     if not process:
         return False
@@ -50,4 +53,5 @@ def schedule_round_robin():
 
 
 def process_count():
+    """Возвращает количество процессов."""
     return len(list_processes())
