@@ -7,6 +7,7 @@ __pycache__/
  Базы данных
 *.sqlite
 *.sqlite3
+*.dtmp
 
  Виртуальные окружения
 .venv/
